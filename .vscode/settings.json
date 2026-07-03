@@ -1,0 +1,14 @@
+{
+  "python.defaultInterpreterPath": "/opt/homebrew/Caskroom/miniconda/base/envs/nornickel-ml/bin/python",
+  "python.condaPath": "/opt/homebrew/Caskroom/miniconda/base/bin/conda",
+  "python.terminal.activateEnvironment": true,
+  "python.envFile": "${workspaceFolder}/.env",
+  "python.terminal.useEnvFile": true,
+  "jupyter.kernels.excludePythonEnvironments": [],
+  "notebook.kernelProviderAssociations": [
+    {
+      "viewType": "jupyter-notebook",
+      "kernelProvider": "ms-toolsai.jupyter"
+    }
+  ]
+}

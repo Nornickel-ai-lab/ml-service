@@ -1,0 +1,9 @@
+name: nornickel-ml
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - jupyter
+  - pip
+  - pip:
+      - -r requirements.txt
