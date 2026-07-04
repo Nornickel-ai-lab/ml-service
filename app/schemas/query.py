@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +14,7 @@ class PassageInput(BaseModel):
 class SynthesizeRequest(BaseModel):
     query: str
     passages: list[PassageInput] = Field(default_factory=list)
+    provider: Literal["cloud", "ollama"] | None = None
 
 
 class SourceOutput(BaseModel):

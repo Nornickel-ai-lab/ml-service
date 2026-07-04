@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     ocr_device: str = "cpu"
     ocr_image_mode: str = "base"
     mock_yandex: bool = False
+    default_ml_provider: str = "cloud"
+    ollama_base_url: str = "http://host.docker.internal:11434"
+    ollama_llm_model: str = "qwen2.5:3b-instruct-q4_K_M"
+    ollama_embed_model: str = "snowflake-arctic-embed2:latest"
+    ollama_embedding_dims: int = 1024
+    ollama_max_passages: int = 3
+    ollama_passage_chars: int = 480
+    ollama_num_predict: int = 512
+    ollama_num_ctx: int = 4096
 
 
 settings = Settings()
