@@ -2,19 +2,22 @@ import math
 
 from app.config import settings
 from app.schemas.embed import EmbedRequest, EmbedResponse
-from app.services import yandex_client
+from app.services import mock_yandex, yandex_client
 
 ROLE_SLOTS = 8
 ROLE_MAP = {"researcher": 0, "admin": 1}
 
 
 def embed(request: EmbedRequest) -> EmbedResponse:
-    model_name = (
-        settings.yandex_embed_query_model
-        if request.mode == "query"
-        else settings.yandex_embed_doc_model
-    )
-    semantic = yandex_client.embed_texts(request.texts, model_name)
+    if settings.mock_yandex:
+        semantic = mock_yandex.mock_embed_texts(request.texts, settings.embedding_dims)
+    else:
+        model_name = (
+            settings.yandex_embed_query_model
+            if request.mode == "query"
+            else settings.yandex_embed_doc_model
+        )
+        semantic = yandex_client.embed_texts(request.texts, model_name)
     roles = request.access_roles or ["researcher", "admin"]
     vectors = [
         _with_role_suffix(vec, roles if request.mode == "passage" else roles[:1])

@@ -1,12 +1,16 @@
 from pathlib import Path
 
+from app.config import settings
 from app.schemas.query import PassageInput, SourceOutput, SynthesizeRequest, SynthesizeResponse
-from app.services import yandex_client
+from app.services import mock_yandex, yandex_client
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize.txt"
 
 
 def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
+    if settings.mock_yandex:
+        return mock_yandex.mock_synthesize(request)
+
     template = PROMPT_PATH.read_text(encoding="utf-8")
     blocks = []
     for index, passage in enumerate(request.passages, start=1):
