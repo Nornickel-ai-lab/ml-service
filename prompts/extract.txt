@@ -6,8 +6,8 @@
 
 Формат JSON:
 {{
-  "entities": [{{"type": "Material|Process|Equipment|Property", "name": "..."}}],
-  "relations": [{{"type": "uses_material|operates_at_condition|produces_output", "from_name": "...", "to_name": "..."}}],
+  "entities": [{{"type": "Material|Process|Equipment|Property|Experiment|Expert|Facility", "name": "..."}}],
+  "relations": [{{"type": "uses_material|operates_at_condition|produces_output|described_in|validated_by", "from_name": "...", "to_name": "..."}}],
   "conclusions": [{{"id": "c1", "text": "...", "confidence": 0.7, "geo": null, "year": null}}],
   "numeric_constraints": [{{"parameter": "...", "operator": "lte|lt|gte|gt|eq", "value": 0.0, "unit": "мг/л"}}],
   "geo": "RU|foreign|world|null",
@@ -15,3 +15,15 @@
   "process": null,
   "material": null
 }}
+
+Правила:
+- Material, Process, Equipment, Property — технические сущности
+- Experiment — опыт, испытание, лабораторная работа
+- Expert — автор, исследователь, носитель экспертизы
+- Facility — лаборатория, завод, установка, НИИ
+- uses_material: Process → Material
+- operates_at_condition: Process → Property (режим, температура, концентрация)
+- produces_output: Process → Material или Property
+- described_in: Experiment или Conclusion → Publication (to_name = название документа если известно)
+- validated_by: Conclusion или Experiment → Expert
+- numeric_constraints: числовые ограничения из текста

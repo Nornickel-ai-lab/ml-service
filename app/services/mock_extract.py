@@ -31,6 +31,10 @@ PROCESSES = [
     "leaching",
 ]
 
+EXPERT_MARKERS = ["автор", "проф", "докт", "канд", "researcher", "author"]
+FACILITY_MARKERS = ["лаборатор", "завод", "установк", "нии", "plant", "facility", "lab"]
+EXPERIMENT_MARKERS = ["опыт", "эксперимент", "испытан", "experiment", "trial"]
+
 GEO_MARKERS = {
     "россия": "RU",
     "отечествен": "RU",
@@ -66,6 +70,19 @@ def extract_mock(text: str, document_id: str | None = None, title: str | None = 
         entities.append(EntityItem(type="Material", name=name))
     for name in found_processes[:5]:
         entities.append(EntityItem(type="Process", name=name))
+
+    for marker in EXPERIMENT_MARKERS:
+        if marker in lowered:
+            entities.append(EntityItem(type="Experiment", name=f"эксперимент: {marker}"))
+            break
+    for marker in EXPERT_MARKERS:
+        if marker in lowered:
+            entities.append(EntityItem(type="Expert", name=f"эксперт ({marker})"))
+            break
+    for marker in FACILITY_MARKERS:
+        if marker in lowered:
+            entities.append(EntityItem(type="Facility", name=f"объект ({marker})"))
+            break
 
     if found_processes and found_materials:
         relations.append(
