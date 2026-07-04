@@ -2,26 +2,28 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app.config import settings
 from app.schemas.extract import ExtractRequest, ExtractResponse
-from app.schemas.parse import ParseRequest, ParseResponse
-from app.services import mock_extract, mock_parse, ollama_client, yandex_client
+from app.services import cloud_ml, mock_extract, ollama_client, yandex_client
 from app.services.llm_json import parse_model_with_retry
 from app.services.provider import resolve_provider
 
 EXTRACT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "extract.txt"
-PARSE_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "parse.txt"
+SYSTEM_PROMPT = "Извлекай структурированные данные из технических текстов. Отвечай только валидным JSON."
 MAX_EXTRACT_CHARS = 6000
 
 
 def extract(request: ExtractRequest) -> ExtractResponse:
-    if settings.mock_yandex:
+    provider = resolve_provider(request.provider)
+    if provider == "ollama":
+        return _extract_ollama(request)
+    if cloud_ml.cloud_uses_mock():
         return mock_extract.extract_mock(
             text=request.text,
             document_id=request.document_id,
             title=request.title,
         )
     try:
+        cloud_ml.ensure_yandex_ready()
         return _extract_yandex(request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"extract parse failed: {exc}") from exc
@@ -30,18 +32,43 @@ def extract(request: ExtractRequest) -> ExtractResponse:
 
 
 def _extract_yandex(request: ExtractRequest) -> ExtractResponse:
-    template = EXTRACT_PROMPT_PATH.read_text(encoding="utf-8")
-    text = request.text[:MAX_EXTRACT_CHARS]
-    prompt = template.format(text=text)
+    prompt = _build_prompt(request)
 
     def generate() -> str:
         return yandex_client.completion(prompt, temperature=0.1)
 
-    parsed = parse_model_with_retry(generate, ExtractResponse)
-    if request.document_id:
-        for index, conclusion in enumerate(parsed.conclusions):
-            if not conclusion.id:
-                parsed.conclusions[index] = conclusion.model_copy(
-                    update={"id": f"{request.document_id}_c{index}"},
-                )
+    return _finalize_response(parse_model_with_retry(generate, ExtractResponse), request)
+
+
+def _extract_ollama(request: ExtractRequest) -> ExtractResponse:
+    user_prompt = _build_prompt(request)
+
+    def generate() -> str:
+        return ollama_client.chat(SYSTEM_PROMPT, user_prompt, temperature=0.1)
+
+    try:
+        parsed = parse_model_with_retry(generate, ExtractResponse)
+    except ValueError:
+        return mock_extract.extract_mock(
+            text=request.text,
+            document_id=request.document_id,
+            title=request.title,
+        )
+    return _finalize_response(parsed, request)
+
+
+def _build_prompt(request: ExtractRequest) -> str:
+    template = EXTRACT_PROMPT_PATH.read_text(encoding="utf-8")
+    text = request.text[:MAX_EXTRACT_CHARS]
+    return template.format(text=text)
+
+
+def _finalize_response(parsed: ExtractResponse, request: ExtractRequest) -> ExtractResponse:
+    if not request.document_id:
+        return parsed
+    for index, conclusion in enumerate(parsed.conclusions):
+        if not conclusion.id:
+            parsed.conclusions[index] = conclusion.model_copy(
+                update={"id": f"{request.document_id}_c{index}"},
+            )
     return parsed
