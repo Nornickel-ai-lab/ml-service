@@ -21,6 +21,6 @@ async def parse_pdf(file: UploadFile) -> OcrParseResponse:
     try:
         result = ocr_service.parse_pdf_bytes(data)
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="ocr failed") from exc
+        raise HTTPException(status_code=503, detail=f"ocr failed: {exc}") from exc
     pages = result["pages"]
     return OcrParseResponse(pages=pages, full_text=result["full_text"])
