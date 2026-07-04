@@ -9,12 +9,13 @@ class PassageInput(BaseModel):
     chunk_text: str
     geo: str | None = None
     year: int | None = None
+    score: float | None = None
 
 
 class SynthesizeRequest(BaseModel):
     query: str
     passages: list[PassageInput] = Field(default_factory=list)
-    provider: Literal["cloud", "ollama"] | None = None
+    provider: Literal["gigachat", "ollama"] | None = None
 
 
 class SourceOutput(BaseModel):

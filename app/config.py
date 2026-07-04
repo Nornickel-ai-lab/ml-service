@@ -4,20 +4,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    yandex_api_key: str = ""
-    yandex_iam_token: str = ""
-    yandex_folder_id: str = ""
-    yandex_model: str = "yandexgpt-lite"
-    yandex_embed_doc_model: str = "text-embeddings-doc-v2"
-    yandex_embed_query_model: str = "text-search-query"
-    embedding_dims: int = 256
-    role_vector_weight: float = 0.15
+    gigachat_credentials: str = ""
+    gigachat_client_id: str = ""
+    gigachat_client_secret: str = ""
+    gigachat_scope: str = "GIGACHAT_API_PERS"
+    gigachat_auth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    gigachat_api_url: str = "https://gigachat.devices.sberbank.ru/api/v1"
+    gigachat_llm_model: str = "GigaChat"
+    gigachat_embed_model: str = "EmbeddingsGigaR"
+    gigachat_embedding_dims: int = 2560
+    gigachat_verify_ssl: bool = False
     unlimited_ocr_model: str = "baidu/Unlimited-OCR"
     ocr_dpi: int = 300
     ocr_device: str = "cpu"
     ocr_image_mode: str = "base"
-    mock_yandex: bool = False
-    default_ml_provider: str = "cloud"
+    default_ml_provider: str = "gigachat"
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_llm_model: str = "qwen2.5:3b-instruct-q4_K_M"
     ollama_embed_model: str = "snowflake-arctic-embed2:latest"

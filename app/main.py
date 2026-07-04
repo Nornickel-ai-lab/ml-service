@@ -7,9 +7,8 @@ from app.api.providers import router as providers_router
 from app.api.query import router as query_router
 from app.config import settings
 from app.ocr.router import router as ocr_router
-from app.services import cloud_ml, ocr_service
+from app.services import gigachat_client, ocr_service
 from app.services import ollama_client
-from app.services.yandex_client import credentials_configured
 
 app = FastAPI(title="rdmap-ml-service", version="0.1.0")
 
@@ -25,13 +24,12 @@ app.include_router(ocr_router)
 def health() -> dict[str, str | bool]:
     return {
         "status": "ok",
-        "yandex_configured": credentials_configured(),
-        "yandex_active": credentials_configured() and not cloud_ml.cloud_uses_mock(),
-        "cloud_mock_fallback": cloud_ml.cloud_uses_mock(),
-        "mock_yandex": settings.mock_yandex,
+        "gigachat_configured": gigachat_client.credentials_configured(),
         "default_ml_provider": settings.default_ml_provider,
         "ollama_available": ollama_client.is_available(),
         "ollama_llm_model": settings.ollama_llm_model,
         "ollama_embed_model": settings.ollama_embed_model,
+        "gigachat_llm_model": settings.gigachat_llm_model,
+        "gigachat_embed_model": settings.gigachat_embed_model,
         "ocr_ready": ocr_service.model_loaded(),
     }

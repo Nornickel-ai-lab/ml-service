@@ -24,7 +24,7 @@ class ParseEntity(BaseModel):
 
 class ParseRequest(BaseModel):
     query: str = Field(min_length=1)
-    provider: Literal["cloud", "ollama"] | None = None
+    provider: Literal["gigachat", "ollama"] | None = None
 
 
 class ParseResponse(BaseModel):
