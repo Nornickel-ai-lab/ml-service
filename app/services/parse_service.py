@@ -2,9 +2,8 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app.config import settings
 from app.schemas.parse import ParseRequest, ParseResponse
-from app.services import mock_parse, ollama_client, yandex_client
+from app.services import cloud_ml, mock_parse, ollama_client, yandex_client
 from app.services.llm_json import parse_model_with_retry
 from app.services.provider import resolve_provider
 
@@ -16,9 +15,10 @@ def parse_query(request: ParseRequest) -> ParseResponse:
     provider = resolve_provider(request.provider)
     if provider == "ollama":
         return _parse_ollama(request)
-    if settings.mock_yandex:
+    if cloud_ml.cloud_uses_mock():
         return mock_parse.parse_mock(request.query)
     try:
+        cloud_ml.ensure_yandex_ready()
         return _parse_yandex(request)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"query parse failed: {exc}") from exc

@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     yandex_iam_token: str = ""
     yandex_folder_id: str = ""
     yandex_model: str = "yandexgpt-lite"
-    yandex_embed_doc_model: str = "text-search-doc"
+    yandex_embed_doc_model: str = "text-embeddings-doc-v2"
     yandex_embed_query_model: str = "text-search-query"
     embedding_dims: int = 256
     role_vector_weight: float = 0.15

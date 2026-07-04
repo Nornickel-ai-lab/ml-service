@@ -7,7 +7,7 @@ from app.api.providers import router as providers_router
 from app.api.query import router as query_router
 from app.config import settings
 from app.ocr.router import router as ocr_router
-from app.services import ocr_service
+from app.services import cloud_ml, ocr_service
 from app.services import ollama_client
 from app.services.yandex_client import credentials_configured
 
@@ -26,6 +26,8 @@ def health() -> dict[str, str | bool]:
     return {
         "status": "ok",
         "yandex_configured": credentials_configured(),
+        "yandex_active": credentials_configured() and not cloud_ml.cloud_uses_mock(),
+        "cloud_mock_fallback": cloud_ml.cloud_uses_mock(),
         "mock_yandex": settings.mock_yandex,
         "default_ml_provider": settings.default_ml_provider,
         "ollama_available": ollama_client.is_available(),

@@ -3,7 +3,7 @@ import re
 
 from app.config import settings
 from app.schemas.query import PassageInput, SourceOutput, SynthesizeRequest, SynthesizeResponse
-from app.services import mock_yandex, ollama_client, yandex_client
+from app.services import cloud_ml, mock_yandex, ollama_client, yandex_client
 from app.services.provider import resolve_provider
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize.txt"
@@ -24,8 +24,9 @@ def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
     provider = resolve_provider(request.provider)
     if provider == "ollama":
         return _synthesize_ollama(request)
-    if settings.mock_yandex:
+    if cloud_ml.cloud_uses_mock():
         return mock_yandex.mock_synthesize(request)
+    cloud_ml.ensure_yandex_ready()
     return _synthesize_yandex(request)
 
 

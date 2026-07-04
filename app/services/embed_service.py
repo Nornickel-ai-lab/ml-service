@@ -2,7 +2,7 @@ import math
 
 from app.config import settings
 from app.schemas.embed import EmbedRequest, EmbedResponse
-from app.services import mock_yandex, ollama_client, yandex_client
+from app.services import cloud_ml, mock_yandex, ollama_client, yandex_client
 from app.services.provider import resolve_provider
 
 ROLE_SLOTS = 8
@@ -14,10 +14,11 @@ def embed(request: EmbedRequest) -> EmbedResponse:
     if provider == "ollama":
         semantic = ollama_client.embed_texts(request.texts)
         base_dims = settings.ollama_embedding_dims
-    elif settings.mock_yandex:
+    elif cloud_ml.cloud_uses_mock():
         semantic = mock_yandex.mock_embed_texts(request.texts, settings.embedding_dims)
         base_dims = settings.embedding_dims
     else:
+        cloud_ml.ensure_yandex_ready()
         model_name = (
             settings.yandex_embed_query_model
             if request.mode == "query"
