@@ -1,10 +1,14 @@
 from pathlib import Path
 import re
 
+from fastapi import HTTPException
+
 from app.config import settings
 from app.schemas.query import PassageInput, SourceOutput, SynthesizeRequest, SynthesizeResponse
-from app.services import cloud_ml, mock_yandex, ollama_client, yandex_client
+from app.services import gigachat_client, ollama_client
 from app.services.provider import resolve_provider
+
+from app.services.relevance import is_insufficient_answer, is_weak_retrieval
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize.txt"
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize_system.txt"
@@ -21,20 +25,63 @@ META_MARKERS = (
 
 
 def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
+    request = request.model_copy(update={"passages": _merge_passages_by_document(request.passages)})
+    weak, relevance = is_weak_retrieval(request.query, request.passages)
+    if weak:
+        return _weak_retrieval_response(request, relevance)
     provider = resolve_provider(request.provider)
     if provider == "ollama":
         return _synthesize_ollama(request)
-    if cloud_ml.cloud_uses_mock():
-        return mock_yandex.mock_synthesize(request)
-    cloud_ml.ensure_yandex_ready()
-    return _synthesize_yandex(request)
+    try:
+        gigachat_client.ensure_ready()
+        return _synthesize_gigachat(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-def _synthesize_yandex(request: SynthesizeRequest) -> SynthesizeResponse:
+def _merge_passages_by_document(passages: list[PassageInput]) -> list[PassageInput]:
+    merged: dict[str, PassageInput] = {}
+    order: list[str] = []
+    for passage in passages:
+        doc_id = passage.document_id
+        chunk = passage.chunk_text.strip()
+        if not doc_id:
+            continue
+        if doc_id not in merged:
+            merged[doc_id] = passage.model_copy(update={"chunk_text": chunk})
+            order.append(doc_id)
+            continue
+        existing = merged[doc_id]
+        text = existing.chunk_text
+        if chunk and chunk not in text:
+            text = f"{text}\n\n{chunk}" if text else chunk
+        score = passage.score
+        if existing.score is not None and score is not None:
+            score = max(existing.score, score)
+        elif existing.score is not None:
+            score = existing.score
+        merged[doc_id] = existing.model_copy(update={"chunk_text": text, "score": score})
+    return [merged[doc_id] for doc_id in order]
+
+
+def _weak_retrieval_response(request: SynthesizeRequest, relevance: float) -> SynthesizeResponse:
+    lines = [
+        "**В базе нет достаточно близких материалов по запросу**",
+        "",
+        "Уточните вопрос: укажите объект, процесс или параметры из ваших документов.",
+        "Например добавьте название фабрики, тип воды или целевой показатель.",
+    ]
+    confidence = max(0.15, min(0.35, relevance * 0.6))
+    return SynthesizeResponse(answer_md="\n".join(lines), sources=[], confidence=confidence)
+
+
+def _synthesize_gigachat(request: SynthesizeRequest) -> SynthesizeResponse:
     prompt = _build_prompt(request, max_passages=len(request.passages), max_chars=1200)
-    answer = yandex_client.completion(prompt, temperature=0.2)
+    answer = gigachat_client.completion(prompt, temperature=0.1)
+    if is_insufficient_answer(answer):
+        return SynthesizeResponse(answer_md=answer, sources=[], confidence=0.28)
     sources = [_to_source(passage, index) for index, passage in enumerate(request.passages)]
-    confidence = 0.75 if request.passages else 0.2
+    confidence = 0.72
     return SynthesizeResponse(answer_md=answer, sources=sources, confidence=confidence)
 
 
@@ -53,9 +100,13 @@ def _synthesize_ollama(request: SynthesizeRequest) -> SynthesizeResponse:
     if _looks_like_meta(answer):
         answer = _extractive_answer(request.query, cleaned)
         confidence = 0.55
+    elif is_insufficient_answer(answer):
+        confidence = 0.28
     else:
         confidence = 0.72
-    sources = [_to_source(passage, index) for index, passage in enumerate(cleaned)]
+    sources = []
+    if confidence >= 0.45:
+        sources = [_to_source(passage, index) for index, passage in enumerate(cleaned)]
     return SynthesizeResponse(answer_md=answer, sources=sources, confidence=confidence)
 
 
@@ -114,12 +165,17 @@ def _build_prompt(
     )
 
 
-def _to_source(passage: PassageInput, index: int) -> SourceOutput:
-    score = max(0.5, 0.9 - index * 0.05)
+def _to_source(passage: PassageInput, index: int, relevance: float | None = None) -> SourceOutput:
+    if passage.score is not None:
+        score = min(0.95, max(0.25, passage.score / 5.0))
+    elif relevance is not None:
+        score = max(0.25, 0.55 - index * 0.05) * max(relevance, 0.35)
+    else:
+        score = max(0.5, 0.9 - index * 0.05)
     return SourceOutput(
         document_id=passage.document_id,
         title=passage.title,
-        chunk_text=passage.chunk_text[:500],
+        chunk_text=passage.chunk_text[:1500],
         confidence=score,
         geo=passage.geo,
         year=passage.year,
