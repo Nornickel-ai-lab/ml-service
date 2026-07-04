@@ -6,3 +6,14 @@ yandex-ai-studio-sdk
 httpx==0.28.1
 python-dotenv==1.0.1
 ruff==0.8.4
+python-multipart==0.0.20
+pymupdf==1.25.1
+torch>=2.5.0
+transformers>=4.57.0
+Pillow>=10.0.0
+accelerate
+einops
+addict
+easydict
+matplotlib
+psutil
