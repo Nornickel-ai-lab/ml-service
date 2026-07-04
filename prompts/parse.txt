@@ -1,0 +1,23 @@
+Разбери поисковый запрос исследователя по горно-металлургии.
+Верни только JSON без пояснений.
+
+Запрос:
+{query}
+
+Формат JSON:
+{{
+  "intent": "literature_search|parameter_search|comparison|overview",
+  "entities": [{{"type": "Material|Process|Equipment", "name": "..."}}],
+  "filters": {{
+    "geo": ["RU", "foreign"],
+    "year_from": null,
+    "year_to": null,
+    "numeric": [{{"parameter": "сульфаты", "operator": "lte", "value": 300, "unit": "мг/л"}}]
+  }},
+  "search_text": "краткая строка для семантического поиска"
+}}
+
+Правила:
+- geo: RU для отечественной практики, foreign для зарубежной
+- operator только lte, lt, gte, gt, eq
+- search_text на русском, без лишних слов

@@ -1,0 +1,17 @@
+Извлеки структурированные данные из текста документа по горно-металлургии.
+Верни только JSON без пояснений.
+
+Текст:
+{text}
+
+Формат JSON:
+{{
+  "entities": [{{"type": "Material|Process|Equipment|Property", "name": "..."}}],
+  "relations": [{{"type": "uses_material|operates_at_condition|produces_output", "from_name": "...", "to_name": "..."}}],
+  "conclusions": [{{"id": "c1", "text": "...", "confidence": 0.7, "geo": null, "year": null}}],
+  "numeric_constraints": [{{"parameter": "...", "operator": "lte|lt|gte|gt|eq", "value": 0.0, "unit": "мг/л"}}],
+  "geo": "RU|foreign|world|null",
+  "year": null,
+  "process": null,
+  "material": null
+}}
