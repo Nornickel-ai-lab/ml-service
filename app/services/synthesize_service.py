@@ -64,7 +64,7 @@ def _extractive_fallback(request: SynthesizeRequest, reason: str) -> SynthesizeR
         sources=[_to_source(passage, index) for index, passage in enumerate(cleaned)],
         confidence=0.55,
         groups=_build_groups(cleaned),
-        gaps=[f"GigaChat временно недоступен: {reason[:120]}"],
+        gaps=[f"Yandex GPT временно недоступен: {reason[:120]}"],
     )
 
 
