@@ -4,13 +4,23 @@ import re
 from fastapi import HTTPException
 
 from app.config import settings
-from app.schemas.query import PassageInput, SourceOutput, SynthesizeRequest, SynthesizeResponse
+from app.schemas.query import (
+    PassageInput,
+    SourceGroupOutput,
+    SourceOutput,
+    SynthesizeRequest,
+    SynthesizeResponse,
+    SynthesizeStructuredOutput,
+)
 from app.services import gigachat_client, ollama_client
+from app.services.gigachat_fallback import log_gigachat_fallback, ollama_fallback_enabled
 from app.services.provider import resolve_provider
 
+from app.services.llm_json import parse_model_with_retry
 from app.services.relevance import is_insufficient_answer, is_weak_retrieval
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize.txt"
+STRUCTURED_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize_structured.txt"
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "synthesize_system.txt"
 
 META_MARKERS = (
@@ -26,8 +36,9 @@ META_MARKERS = (
 
 def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
     request = request.model_copy(update={"passages": _merge_passages_by_document(request.passages)})
-    weak, relevance = is_weak_retrieval(request.query, request.passages)
-    if weak:
+    relevance_query = (request.relevance_query or request.query).strip()
+    weak, relevance = is_weak_retrieval(relevance_query, request.passages)
+    if weak and not request.passages:
         return _weak_retrieval_response(request, relevance)
     provider = resolve_provider(request.provider)
     if provider == "ollama":
@@ -36,7 +47,25 @@ def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
         gigachat_client.ensure_ready()
         return _synthesize_gigachat(request)
     except RuntimeError as exc:
+        if ollama_fallback_enabled():
+            log_gigachat_fallback("synthesize", str(exc))
+            return _synthesize_ollama(request)
+        if request.passages:
+            return _extractive_fallback(request, str(exc))
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _extractive_fallback(request: SynthesizeRequest, reason: str) -> SynthesizeResponse:
+    passages = request.passages[: settings.gigachat_max_passages]
+    cleaned = [_clean_passage(passage) for passage in passages]
+    answer = _extractive_answer(request.query, cleaned)
+    return SynthesizeResponse(
+        answer_md=answer,
+        sources=[_to_source(passage, index) for index, passage in enumerate(cleaned)],
+        confidence=0.55,
+        groups=_build_groups(cleaned),
+        gaps=[f"GigaChat временно недоступен: {reason[:120]}"],
+    )
 
 
 def _merge_passages_by_document(passages: list[PassageInput]) -> list[PassageInput]:
@@ -60,29 +89,105 @@ def _merge_passages_by_document(passages: list[PassageInput]) -> list[PassageInp
             score = max(existing.score, score)
         elif existing.score is not None:
             score = existing.score
-        merged[doc_id] = existing.model_copy(update={"chunk_text": text, "score": score})
+        merged[doc_id] = existing.model_copy(update={"chunk_text": text, "score": score, "page_num": existing.page_num or passage.page_num})
     return [merged[doc_id] for doc_id in order]
 
 
 def _weak_retrieval_response(request: SynthesizeRequest, relevance: float) -> SynthesizeResponse:
+    query_short = request.query.strip()
+    if len(query_short) > 160:
+        query_short = query_short[:157] + "…"
     lines = [
-        "**В базе нет достаточно близких материалов по запросу**",
+        "**В загруженном корпусе нет материалов, которые напрямую отвечают на запрос**",
         "",
-        "Уточните вопрос: укажите объект, процесс или параметры из ваших документов.",
-        "Например добавьте название фабрики, тип воды или целевой показатель.",
+        f"Запрос: *{query_short}*",
+        "",
+        "Найденные фрагменты не содержат подтверждённых данных по формулировке запроса.",
+        "",
+        "**Что можно сделать:** уточнить материал или процесс, снять фильтры по годам и географии "
+        "или загрузить профильные документы по теме.",
     ]
-    confidence = max(0.15, min(0.35, relevance * 0.6))
-    return SynthesizeResponse(answer_md="\n".join(lines), sources=[], confidence=confidence)
+    confidence = max(0.12, min(0.32, relevance * 0.5))
+    gaps = [
+        "Нет подтверждённых источников с методами или режимами по формулировке запроса.",
+        "Семантический поиск нашёл только слабо связанные фрагменты.",
+    ]
+    recommendations = [
+        "Сформулируйте вопрос по конкретному материалу или процессу из загруженного корпуса.",
+        "Проверьте фильтры: год, география, материал, процесс.",
+    ]
+    return SynthesizeResponse(
+        answer_md="\n".join(lines),
+        sources=[],
+        confidence=confidence,
+        gaps=gaps,
+        recommendations=recommendations,
+    )
+
+
+def _build_groups(passages: list[PassageInput]) -> list[SourceGroupOutput]:
+    buckets: dict[str, list[str]] = {}
+    for passage in passages:
+        label = passage.geo or "unknown"
+        if label == "RU":
+            title = "Отечественная практика"
+        elif label == "foreign":
+            title = "Зарубежная практика"
+        elif label == "world":
+            title = "Мировая практика"
+        else:
+            title = "Источники"
+        buckets.setdefault(title, [])
+        if passage.title not in buckets[title]:
+            buckets[title].append(passage.title)
+    return [
+        SourceGroupOutput(title=title, summary=f"{len(titles)} источник(ов)", source_titles=titles)
+        for title, titles in buckets.items()
+    ]
 
 
 def _synthesize_gigachat(request: SynthesizeRequest) -> SynthesizeResponse:
-    prompt = _build_prompt(request, max_passages=len(request.passages), max_chars=1200)
-    answer = gigachat_client.completion(prompt, temperature=0.1)
+    passages = request.passages[: settings.gigachat_max_passages]
+    request = request.model_copy(update={"passages": passages})
+    template = STRUCTURED_PROMPT_PATH.read_text(encoding="utf-8")
+    blocks = []
+    for index, passage in enumerate(request.passages, start=1):
+        blocks.append(f"[{index}] {passage.title}\n{passage.chunk_text[:1200]}")
+    prompt = template.format(
+        query=request.query,
+        passages="\n\n".join(blocks) if blocks else "нет данных",
+    )
+
+    def generate() -> str:
+        return gigachat_client.completion(prompt, temperature=0.1)
+
+    try:
+        structured = parse_model_with_retry(generate, SynthesizeStructuredOutput)
+        sources = [_to_source(passage, index) for index, passage in enumerate(request.passages)]
+        if is_insufficient_answer(structured.answer_md):
+            return SynthesizeResponse(answer_md=structured.answer_md, sources=[], confidence=0.28)
+        return SynthesizeResponse(
+            answer_md=structured.answer_md,
+            sources=sources,
+            confidence=0.72,
+            groups=structured.groups or _build_groups(request.passages),
+            gaps=structured.gaps,
+            recommendations=structured.recommendations,
+        )
+    except ValueError:
+        pass
+
+    legacy_prompt = _build_prompt(request, max_passages=len(request.passages), max_chars=1200)
+    answer = gigachat_client.completion(legacy_prompt, temperature=0.1)
     if is_insufficient_answer(answer):
         return SynthesizeResponse(answer_md=answer, sources=[], confidence=0.28)
     sources = [_to_source(passage, index) for index, passage in enumerate(request.passages)]
-    confidence = 0.72
-    return SynthesizeResponse(answer_md=answer, sources=sources, confidence=confidence)
+    return SynthesizeResponse(
+        answer_md=answer,
+        sources=sources,
+        confidence=0.72,
+        groups=_build_groups(request.passages),
+    )
 
 
 def _synthesize_ollama(request: SynthesizeRequest) -> SynthesizeResponse:
@@ -107,7 +212,12 @@ def _synthesize_ollama(request: SynthesizeRequest) -> SynthesizeResponse:
     sources = []
     if confidence >= 0.45:
         sources = [_to_source(passage, index) for index, passage in enumerate(cleaned)]
-    return SynthesizeResponse(answer_md=answer, sources=sources, confidence=confidence)
+    return SynthesizeResponse(
+        answer_md=answer,
+        sources=sources,
+        confidence=confidence,
+        groups=_build_groups(cleaned) if confidence >= 0.45 else [],
+    )
 
 
 def _build_user_prompt(query: str, passages: list[PassageInput], max_chars: int) -> str:
@@ -128,6 +238,7 @@ def _clean_passage(passage: PassageInput) -> PassageInput:
         chunk_text=text.strip(),
         geo=passage.geo,
         year=passage.year,
+        page_num=passage.page_num,
     )
 
 
@@ -179,4 +290,5 @@ def _to_source(passage: PassageInput, index: int, relevance: float | None = None
         confidence=score,
         geo=passage.geo,
         year=passage.year,
+        page_num=passage.page_num,
     )

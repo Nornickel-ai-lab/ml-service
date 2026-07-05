@@ -1,5 +1,6 @@
 import re
 
+from app.config import settings
 from app.schemas.query import PassageInput
 
 STOPWORDS = {
@@ -24,17 +25,9 @@ STOPWORDS = {
     "есть",
     "все",
     "всё",
-    "исходная",
-    "исходной",
-    "содержит",
-    "требуемый",
-    "требуемое",
     "данной",
     "данный",
     "данная",
-    "воды",
-    "воде",
-    "воду",
     "методы",
     "метода",
     "метод",
@@ -44,7 +37,7 @@ STOPWORDS = {
     "подходящий",
 }
 
-RELEVANCE_RATIO_THRESHOLD = 0.4
+ANCHOR_MIN_LEN = 8
 
 INSUFFICIENT_ANSWER_MARKERS = (
     "данных недостаточно",
@@ -65,30 +58,43 @@ INSUFFICIENT_ANSWER_MARKERS = (
     "не могу ответить",
 )
 
-
 DOMAIN_GENERIC = {
-    "сульфаты",
-    "сульфатов",
-    "хлориды",
-    "хлоридов",
-    "хлорид",
-    "сухой",
-    "остаток",
-    "остатка",
-    "кальция",
-    "магния",
-    "натрия",
-    "промсточные",
-    "промсточных",
-    "ионы",
-    "ионов",
-    "раствор",
-    "раствора",
-    "очистка",
-    "очистки",
-    "обработка",
-    "обработки",
+    "покажите",
+    "описаны",
+    "практике",
+    "считается",
+    "оптимальной",
+    "технические",
+    "решения",
+    "организации",
+    "эксперименты",
+    "публикации",
+    "распределению",
+    "последние",
+    "способы",
+    "применялись",
+    "рубежом",
+    "показатели",
+    "параметрам",
+    "источниках",
+    "подтверждённые",
+    "подтвержденные",
+    "указанным",
 }
+
+
+def _terms_raw(query: str) -> list[str]:
+    words = re.findall(r"[\w\u0400-\u04FF]+", query.lower())
+    result: list[str] = []
+    for word in words:
+        if len(word) < 4 or word in STOPWORDS or word.isdigit():
+            continue
+        result.append(word)
+    return result
+
+
+def _anchor_terms(query: str) -> list[str]:
+    return [term for term in _terms_raw(query) if len(term) >= ANCHOR_MIN_LEN]
 
 
 def _terms(query: str) -> list[str]:
@@ -141,13 +147,32 @@ def is_insufficient_answer(answer: str) -> bool:
 def is_weak_retrieval(query: str, passages: list[PassageInput]) -> tuple[bool, float]:
     if not passages:
         return True, 0.0
+
     ratio = retrieval_relevance(query, passages)
-    terms = sorted(_terms(query), key=len, reverse=True)
-    head = [term for term in terms if len(term) >= 8][:3]
+    top_score = max((p.score or 0.0) for p in passages)
+    ratio_threshold = settings.weak_relevance_ratio
+    es_min = settings.weak_es_score_min
+
+    if top_score >= es_min:
+        return False, ratio
+
     blob = "\n".join(passage.chunk_text.lower() for passage in passages)
+    anchors = _anchor_terms(query)
+    if anchors:
+        anchor_hits = sum(1 for term in anchors if _term_hits(term, blob))
+        if anchor_hits == 0 and ratio < ratio_threshold:
+            return True, min(ratio, 0.25)
+
+    if ratio >= ratio_threshold:
+        return False, ratio
+
+    terms = _terms(query)
+    head = [term for term in sorted(terms, key=len, reverse=True) if len(term) >= ANCHOR_MIN_LEN][:3]
     head_hits = sum(1 for term in head if _term_hits(term, blob))
-    if ratio < RELEVANCE_RATIO_THRESHOLD:
-        return True, ratio
-    if head and len(terms) >= 3 and head_hits < 2:
-        return True, ratio
-    return False, ratio
+    if head and head_hits >= 1 and ratio >= ratio_threshold * 0.7:
+        return False, ratio
+
+    if top_score >= es_min * 0.8 and ratio >= ratio_threshold * 0.5:
+        return False, ratio
+
+    return True, ratio
