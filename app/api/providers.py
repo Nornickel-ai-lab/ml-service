@@ -15,11 +15,11 @@ def list_providers() -> dict:
         "providers": [
             {
                 "id": "gigachat",
-                "label": "GigaChat API",
+                "label": "Yandex GPT",
                 "available": gigachat_ready,
                 "gigachat_configured": gigachat_ready,
-                "llm_model": settings.gigachat_llm_model,
-                "embed_model": settings.gigachat_embed_model,
+                "llm_model": settings.yandex_llm_model,
+                "embed_model": settings.yandex_embed_doc_model,
             },
             {
                 "id": "ollama",

@@ -12,8 +12,14 @@ class Settings(BaseSettings):
     gigachat_api_url: str = "https://gigachat.devices.sberbank.ru/api/v1"
     gigachat_llm_model: str = "GigaChat-2-Pro"
     gigachat_embed_model: str = "EmbeddingsGigaR"
-    gigachat_embedding_dims: int = 2560
+    gigachat_embedding_dims: int = 256
     gigachat_verify_ssl: bool = False
+    yandex_api_key: str = ""
+    yandex_folder_id: str = ""
+    yandex_llm_model: str = "yandexgpt/latest"
+    yandex_embed_doc_model: str = "text-search-doc/latest"
+    yandex_embed_query_model: str = "text-search-query/latest"
+    yandex_embedding_dims: int = 256
     unlimited_ocr_model: str = "baidu/Unlimited-OCR"
     ocr_dpi: int = 300
     ocr_device: str = "cpu"
