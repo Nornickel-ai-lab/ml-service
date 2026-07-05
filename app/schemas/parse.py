@@ -25,6 +25,7 @@ class ParseEntity(BaseModel):
 class ParseRequest(BaseModel):
     query: str = Field(min_length=1)
     provider: Literal["gigachat", "ollama"] | None = None
+    use_llm: bool | None = None
 
 
 class ParseResponse(BaseModel):

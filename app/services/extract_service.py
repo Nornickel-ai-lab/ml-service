@@ -4,6 +4,7 @@ from fastapi import HTTPException
 
 from app.schemas.extract import ExtractRequest, ExtractResponse
 from app.services import gigachat_client, mock_extract, ollama_client
+from app.services.gigachat_fallback import log_gigachat_fallback, ollama_fallback_enabled
 from app.services.llm_json import parse_model_with_retry
 from app.services.provider import resolve_provider
 
@@ -22,6 +23,9 @@ def extract(request: ExtractRequest) -> ExtractResponse:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"extract parse failed: {exc}") from exc
     except RuntimeError as exc:
+        if ollama_fallback_enabled():
+            log_gigachat_fallback("extract", str(exc))
+            return _extract_ollama(request)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 

@@ -9,7 +9,7 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 @router.get("")
 def list_providers() -> dict:
     ollama_available = ollama_client.is_available()
-    gigachat_ready = gigachat_client.credentials_configured()
+    gigachat_ready = gigachat_client.is_available()
     return {
         "default": settings.default_ml_provider if settings.default_ml_provider != "cloud" else "gigachat",
         "providers": [

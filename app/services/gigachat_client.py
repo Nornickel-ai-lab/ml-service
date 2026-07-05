@@ -42,6 +42,22 @@ def credentials_configured() -> bool:
     return bool(settings.gigachat_client_id.strip() and settings.gigachat_client_secret.strip())
 
 
+def _invalidate_token() -> None:
+    global _token, _token_expires_at
+    _token = None
+    _token_expires_at = 0.0
+
+
+def is_available() -> bool:
+    if not credentials_configured():
+        return False
+    try:
+        _get_access_token()
+        return True
+    except RuntimeError:
+        return False
+
+
 def ensure_ready() -> None:
     if not credentials_configured():
         raise RuntimeError(
@@ -95,6 +111,10 @@ def chat(system: str, user: str, temperature: float = 0.2) -> str:
     if system.strip():
         messages.append({"role": "system", "content": system.strip()})
     messages.append({"role": "user", "content": user})
+    return _chat_request(messages, temperature)
+
+
+def _chat_request(messages: list[dict[str, str]], temperature: float, *, retry: bool = True) -> str:
     with httpx.Client(verify=_verify_ssl(), timeout=120.0) as client:
         response = client.post(
             f"{settings.gigachat_api_url.rstrip('/')}/chat/completions",
@@ -106,6 +126,9 @@ def chat(system: str, user: str, temperature: float = 0.2) -> str:
                 "stream": False,
             },
         )
+        if response.status_code == 401 and retry:
+            _invalidate_token()
+            return _chat_request(messages, temperature, retry=False)
         if response.status_code >= 400:
             raise RuntimeError(f"gigachat chat failed: {response.status_code} {response.text[:240]}")
         data = response.json()
@@ -120,6 +143,10 @@ def embed_texts(texts: list[str], mode: str = "passage") -> list[list[float]]:
     prepared = list(texts)
     if mode == "query" and prepared:
         prepared[0] = QUERY_INSTRUCTION + prepared[0]
+    return _embed_request(prepared)
+
+
+def _embed_request(prepared: list[str], *, retry: bool = True) -> list[list[float]]:
     vectors: list[list[float]] = []
     with httpx.Client(verify=_verify_ssl(), timeout=300.0) as client:
         for start in range(0, len(prepared), BATCH_SIZE):
@@ -129,6 +156,9 @@ def embed_texts(texts: list[str], mode: str = "passage") -> list[list[float]]:
                 headers=_api_headers(),
                 json={"model": settings.gigachat_embed_model, "input": batch},
             )
+            if response.status_code == 401 and retry:
+                _invalidate_token()
+                return _embed_request(prepared, retry=False)
             if response.status_code >= 400:
                 raise RuntimeError(f"gigachat embed failed: {response.status_code} {response.text[:240]}")
             data = response.json()

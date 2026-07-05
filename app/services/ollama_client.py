@@ -10,7 +10,7 @@ def _base_url() -> str:
 
 
 def is_available() -> bool:
-    if not settings.ollama_base_url:
+    if not settings.ollama_enabled or not settings.ollama_base_url:
         return False
     try:
         with httpx.Client(timeout=5.0) as client:
